@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-[#14100B] px-4">
@@ -17,12 +19,13 @@ export default function Home() {
           do zero ao campo
         </p>
 
-        <button
+        <Link
+          href="/entrar"
           className="mt-4 bg-[#FF5A1F] text-[#14100B] font-bold uppercase tracking-widest px-10 py-3 text-base hover:brightness-110 active:scale-95 transition-all"
           style={{ fontFamily: "var(--font-oswald)" }}
         >
           Entrar
-        </button>
+        </Link>
       </div>
     </main>
   );
