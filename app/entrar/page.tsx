@@ -2,15 +2,17 @@
 
 import { entrar } from "@/app/actions/auth";
 import Link from "next/link";
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function EntrarPage() {
   const router = useRouter();
   const [state, action, pending] = useActionState(entrar, undefined);
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
     if (state && "ok" in state) {
+      setRedirecting(true);
       router.push("/painel");
     }
   }, [state, router]);
@@ -88,7 +90,7 @@ export default function EntrarPage() {
             className="mt-2 bg-[#FF5A1F] text-[#14100B] font-bold uppercase tracking-widest py-3 hover:brightness-110 active:scale-95 transition-all disabled:opacity-50"
             style={{ fontFamily: "var(--font-oswald)" }}
           >
-            {pending ? "Entrando..." : "Entrar"}
+            {redirecting ? "Redirecionando..." : pending ? "Entrando..." : "Entrar"}
           </button>
         </form>
 
