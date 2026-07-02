@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import AppShell from "./components/AppShell";
+import PWASetup from "./components/PWASetup";
 
 export default async function PainelLayout({
   children,
@@ -13,5 +14,10 @@ export default async function PainelLayout({
   } = await supabase.auth.getUser();
   if (!user) redirect("/entrar");
 
-  return <AppShell userEmail={user.email ?? ""}>{children}</AppShell>;
+  return (
+    <>
+      <AppShell userEmail={user.email ?? ""}>{children}</AppShell>
+      <PWASetup />
+    </>
+  );
 }

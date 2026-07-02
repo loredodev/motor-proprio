@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import LineChart from "@/app/painel/components/LineChart";
 
 /* ── utils ── */
 function r1(n: number) { return Math.round(n * 10) / 10; }
@@ -14,6 +15,12 @@ function hhmm(d: Date) {
   return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
 }
 function num(v: string) { const n = parseFloat(v.replace(",", ".")); return isNaN(n) ? null : n; }
+function cutoffDate(days: number | null) {
+  if (!days) return null;
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
 
 /* ── estilos ── */
 const inputStyle: React.CSSProperties = {
@@ -33,19 +40,44 @@ const segBtnStyle = (active: boolean): React.CSSProperties => ({
   letterSpacing: ".07em", fontWeight: 600, fontSize: 12, padding: "8px 14px",
   cursor: "pointer", transition: ".15s", whiteSpace: "nowrap" as const,
 });
+const periodBtnStyle = (active: boolean): React.CSSProperties => ({
+  background: active ? "var(--line2)" : "transparent",
+  color: active ? "var(--txt)" : "var(--faint)",
+  border: `1px solid ${active ? "var(--line2)" : "transparent"}`,
+  borderRadius: 6, fontSize: 11, fontFamily: "var(--font-oswald)", textTransform: "uppercase",
+  letterSpacing: ".06em", fontWeight: 600, padding: "5px 10px", cursor: "pointer",
+});
 
-/* ════════ HISTÓRICO ════════ */
-type HistSub = "peso" | "medidas" | "treino" | "jejum";
+const PERIODS: { label: string; days: number | null }[] = [
+  { label: "30d", days: 30 },
+  { label: "90d", days: 90 },
+  { label: "Tudo", days: null },
+];
+
+/* ════════ PESO ════════ */
+const PESO_METRICS = [
+  { k: "peso", label: "Peso", unit: "kg", col: "#FF5A1F" },
+  { k: "gordura", label: "Gordura", unit: "%", col: "#FF5A1F" },
+  { k: "musculo", label: "Músculo", unit: "kg", col: "#8FBF8A" },
+  { k: "visceral", label: "Visceral", unit: "", col: "#B5803F" },
+];
+const PESO_FIELDS: [string, string, string][] = [
+  ["peso", "kg", "Peso"], ["gordura", "%", "Gord."], ["musculo", "kg", "Músc."],
+  ["agua", "%", "Água"], ["visceral", "", "Visc."], ["osso", "kg", "Osso"],
+  ["tmb", "kcal", "TMB"], ["proteina", "%", "Prot."], ["idade_corporal", "a", "Idade"], ["fc_repouso", "bpm", "FC"],
+];
 
 function HistoricoPeso() {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<number | null>(90);
+  const [metric, setMetric] = useState("peso");
   const sb = createClient();
 
   const load = useCallback(async () => {
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return;
-    const { data } = await sb.from("pesagens").select("*").eq("user_id", user.id).order("data", { ascending: false });
+    const { data } = await sb.from("pesagens").select("*").eq("user_id", user.id).order("data", { ascending: true });
     setRows(data ?? []);
     setLoading(false);
   }, []); // eslint-disable-line
@@ -54,29 +86,43 @@ function HistoricoPeso() {
 
   async function apagar(id: string) {
     await sb.from("pesagens").delete().eq("id", id);
-    setRows(prev => prev.filter((r: Record<string, unknown>) => r.id !== id));
+    setRows(prev => prev.filter(r => r.id !== id));
   }
 
   if (loading) return <div style={{ color: "var(--faint)", padding: 20, textAlign: "center" }}>Carregando…</div>;
   if (!rows.length) return <div style={{ color: "var(--faint)", textAlign: "center", padding: "38px 20px", fontSize: 14 }}>Nenhuma pesagem ainda.</div>;
 
-  const FIELDS: [string, string, string][] = [
-    ["peso", "kg", "Peso"], ["gordura", "%", "Gord."], ["musculo", "kg", "Músc."],
-    ["agua", "%", "Água"], ["visceral", "", "Visc."], ["osso", "kg", "Osso"],
-    ["tmb", "kcal", "TMB"], ["proteina", "%", "Prot."], ["idade_corporal", "a", "Idade"], ["fc_repouso", "bpm", "FC"],
-  ];
+  const cutoff = cutoffDate(period);
+  const filtered = cutoff ? rows.filter(r => String(r.data) >= cutoff) : rows;
+  const m = PESO_METRICS.find(x => x.k === metric)!;
+  const pts = filtered.map(r => ({ x: String(r.data), y: (r[m.k] as number | null) ?? null }));
 
   return (
     <div>
-      {rows.map((p: Record<string, unknown>) => {
-        const cells = FIELDS.filter(([k]) => p[k] != null).map(([k, u, lb]) => (
+      {/* seletor de métrica */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        {PESO_METRICS.map(x => (
+          <button key={x.k} style={segBtnStyle(metric === x.k)} onClick={() => setMetric(x.k)}>{x.label}</button>
+        ))}
+      </div>
+      {/* seletor de período */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 10, justifyContent: "flex-end" }}>
+        {PERIODS.map(p => (
+          <button key={p.label} style={periodBtnStyle(period === p.days)} onClick={() => setPeriod(p.days)}>{p.label}</button>
+        ))}
+      </div>
+      {/* gráfico */}
+      <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "14px 10px 8px", marginBottom: 14 }}>
+        <LineChart points={pts} color={m.col} unit={m.unit} id={`mais_${m.k}`} />
+      </div>
+      {/* lista */}
+      {[...filtered].reverse().map(p => {
+        const cells = PESO_FIELDS.filter(([k]) => p[k] != null).map(([k, u, lb]) => (
           <div key={k} style={{ fontSize: 12.5, color: "var(--muted)" }}>
             {lb} <b style={{ color: "var(--txt)", fontFamily: "var(--font-oswald)", fontSize: 14 }}>{r1(p[k] as number)}{u}</b>
           </div>
         ));
-        if (p.pressao) cells.push(
-          <div key="pa" style={{ fontSize: 12.5, color: "var(--muted)" }}>PA <b style={{ color: "var(--txt)", fontFamily: "var(--font-oswald)", fontSize: 14 }}>{String(p.pressao)}</b></div>
-        );
+        if (p.pressao) cells.push(<div key="pa" style={{ fontSize: 12.5, color: "var(--muted)" }}>PA <b style={{ color: "var(--txt)", fontFamily: "var(--font-oswald)", fontSize: 14 }}>{String(p.pressao)}</b></div>);
         return (
           <div key={String(p.id)} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "12px 13px", marginBottom: 9 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -91,15 +137,33 @@ function HistoricoPeso() {
   );
 }
 
+/* ════════ MEDIDAS ════════ */
+const MED_METRICS = [
+  { k: "cintura", label: "Cintura", unit: "cm", col: "#FF5A1F" },
+  { k: "abdomen", label: "Abdômen", unit: "cm", col: "#FF5A1F" },
+  { k: "quadril", label: "Quadril", unit: "cm", col: "#8FBF8A" },
+  { k: "peito", label: "Peito", unit: "cm", col: "#B5803F" },
+  { k: "braco_d", label: "Braço D", unit: "cm", col: "#8FBF8A" },
+  { k: "coxa_d", label: "Coxa D", unit: "cm", col: "#8FBF8A" },
+];
+const MED_FIELDS: [string, string][] = [
+  ["pescoco", "Pescoço"], ["ombro", "Ombro"], ["peito", "Peito"],
+  ["cintura", "Cintura"], ["abdomen", "Abdômen"], ["quadril", "Quadril"],
+  ["braco_d", "Braço D"], ["braco_e", "Braço E"], ["antebraco_d", "Antebr. D"], ["antebraco_e", "Antebr. E"],
+  ["coxa_d", "Coxa D"], ["coxa_e", "Coxa E"], ["panturrilha_d", "Pantur. D"], ["panturrilha_e", "Pantur. E"],
+];
+
 function HistoricoMedidas() {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<number | null>(90);
+  const [metric, setMetric] = useState("cintura");
   const sb = createClient();
 
   const load = useCallback(async () => {
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return;
-    const { data } = await sb.from("medidas").select("*").eq("user_id", user.id).order("data", { ascending: false });
+    const { data } = await sb.from("medidas").select("*").eq("user_id", user.id).order("data", { ascending: true });
     setRows(data ?? []);
     setLoading(false);
   }, []); // eslint-disable-line
@@ -108,34 +172,43 @@ function HistoricoMedidas() {
 
   async function apagar(id: string) {
     await sb.from("medidas").delete().eq("id", id);
-    setRows(prev => prev.filter((r: Record<string, unknown>) => r.id !== id));
+    setRows(prev => prev.filter(r => r.id !== id));
   }
 
   if (loading) return <div style={{ color: "var(--faint)", padding: 20, textAlign: "center" }}>Carregando…</div>;
   if (!rows.length) return <div style={{ color: "var(--faint)", textAlign: "center", padding: "38px 20px", fontSize: 14 }}>Nenhuma medida ainda.</div>;
 
-  const MEDS: [string, string][] = [
-    ["pescoco", "Pescoço"], ["ombro", "Ombro"], ["peito", "Peito"],
-    ["cintura", "Cintura"], ["abdomen", "Abdômen"], ["quadril", "Quadril"],
-    ["braco_d", "Braço D"], ["braco_e", "Braço E"],
-    ["antebraco_d", "Antebr. D"], ["antebraco_e", "Antebr. E"],
-    ["coxa_d", "Coxa D"], ["coxa_e", "Coxa E"],
-    ["panturrilha_d", "Pantur. D"], ["panturrilha_e", "Pantur. E"],
-  ];
+  const cutoff = cutoffDate(period);
+  const filtered = cutoff ? rows.filter(r => String(r.data) >= cutoff) : rows;
+  const m = MED_METRICS.find(x => x.k === metric)!;
+  const pts = filtered.map(r => ({ x: String(r.data), y: (r[m.k] as number | null) ?? null }));
 
   return (
     <div>
-      {rows.map((m: Record<string, unknown>) => {
-        const cells = MEDS.filter(([k]) => m[k] != null).map(([k, lb]) => (
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        {MED_METRICS.map(x => (
+          <button key={x.k} style={segBtnStyle(metric === x.k)} onClick={() => setMetric(x.k)}>{x.label}</button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 10, justifyContent: "flex-end" }}>
+        {PERIODS.map(p => (
+          <button key={p.label} style={periodBtnStyle(period === p.days)} onClick={() => setPeriod(p.days)}>{p.label}</button>
+        ))}
+      </div>
+      <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "14px 10px 8px", marginBottom: 14 }}>
+        <LineChart points={pts} color={m.col} unit={m.unit} id={`mais_med_${m.k}`} />
+      </div>
+      {[...filtered].reverse().map(med => {
+        const cells = MED_FIELDS.filter(([k]) => med[k] != null).map(([k, lb]) => (
           <div key={k} style={{ fontSize: 12.5, color: "var(--muted)" }}>
-            {lb} <b style={{ color: "var(--txt)", fontFamily: "var(--font-oswald)", fontSize: 14 }}>{r1(m[k] as number)}cm</b>
+            {lb} <b style={{ color: "var(--txt)", fontFamily: "var(--font-oswald)", fontSize: 14 }}>{r1(med[k] as number)}cm</b>
           </div>
         ));
         return (
-          <div key={String(m.id)} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "12px 13px", marginBottom: 9 }}>
+          <div key={String(med.id)} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "12px 13px", marginBottom: 9 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span style={{ fontFamily: "var(--font-oswald)", fontWeight: 600, letterSpacing: ".05em", color: "var(--txt)", fontSize: 14 }}>{brDateFull(String(m.data))}</span>
-              <button onClick={() => apagar(String(m.id))} style={{ background: "none", border: "none", color: "var(--faint)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>apagar</button>
+              <span style={{ fontFamily: "var(--font-oswald)", fontWeight: 600, letterSpacing: ".05em", color: "var(--txt)", fontSize: 14 }}>{brDateFull(String(med.data))}</span>
+              <button onClick={() => apagar(String(med.id))} style={{ background: "none", border: "none", color: "var(--faint)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>apagar</button>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 14px" }}>{cells}</div>
           </div>
@@ -145,9 +218,11 @@ function HistoricoMedidas() {
   );
 }
 
+/* ════════ TREINO ════════ */
 function HistoricoTreino() {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<number | null>(90);
   const sb = createClient();
 
   const load = useCallback(async () => {
@@ -162,15 +237,23 @@ function HistoricoTreino() {
 
   async function apagar(id: string) {
     await sb.from("treinos").delete().eq("id", id);
-    setRows(prev => prev.filter((r: Record<string, unknown>) => r.id !== id));
+    setRows(prev => prev.filter(r => r.id !== id));
   }
 
   if (loading) return <div style={{ color: "var(--faint)", padding: 20, textAlign: "center" }}>Carregando…</div>;
   if (!rows.length) return <div style={{ color: "var(--faint)", textAlign: "center", padding: "38px 20px", fontSize: 14 }}>Nenhum treino ainda.</div>;
 
+  const cutoff = cutoffDate(period);
+  const filtered = cutoff ? rows.filter(r => String(r.data) >= cutoff) : rows;
+
   return (
     <div>
-      {rows.map((t: Record<string, unknown>) => (
+      <div style={{ display: "flex", gap: 4, marginBottom: 14, justifyContent: "flex-end" }}>
+        {PERIODS.map(p => (
+          <button key={p.label} style={periodBtnStyle(period === p.days)} onClick={() => setPeriod(p.days)}>{p.label}</button>
+        ))}
+      </div>
+      {filtered.map(t => (
         <div key={String(t.id)} style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "12px 13px", marginBottom: 9 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <span style={{ fontFamily: "var(--font-oswald)", fontWeight: 600, letterSpacing: ".05em", color: "var(--txt)", fontSize: 14 }}>{brDateFull(String(t.data))}</span>
@@ -191,9 +274,11 @@ function HistoricoTreino() {
   );
 }
 
+/* ════════ JEJUM ════════ */
 function HistoricoJejum() {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<number | null>(90);
   const sb = createClient();
 
   const load = useCallback(async () => {
@@ -209,9 +294,17 @@ function HistoricoJejum() {
   if (loading) return <div style={{ color: "var(--faint)", padding: 20, textAlign: "center" }}>Carregando…</div>;
   if (!rows.length) return <div style={{ color: "var(--faint)", textAlign: "center", padding: "38px 20px", fontSize: 14 }}>Nenhum jejum ainda.</div>;
 
+  const cutoff = cutoffDate(period);
+  const filtered = cutoff ? rows.filter(r => String(r.inicio).slice(0, 10) >= cutoff) : rows;
+
   return (
     <div>
-      {rows.map((f: Record<string, unknown>) => {
+      <div style={{ display: "flex", gap: 4, marginBottom: 14, justifyContent: "flex-end" }}>
+        {PERIODS.map(p => (
+          <button key={p.label} style={periodBtnStyle(period === p.days)} onClick={() => setPeriod(p.days)}>{p.label}</button>
+        ))}
+      </div>
+      {filtered.map(f => {
         const ini = new Date(String(f.inicio));
         const fim = new Date(String(f.fim));
         const batido = Boolean(f.alvo_batido);
@@ -258,13 +351,12 @@ function SeusDados() {
     setSaving(true);
     const { data: { user } } = await sb.auth.getUser();
     if (!user) { setSaving(false); return; }
-    const payload = {
+    const { error } = await sb.from("perfil").upsert({
       user_id: user.id,
       altura: num(vals.altura),
       data_inicio: vals.dataInicio || null,
       peso_meta: num(vals.pesoMeta),
-    };
-    const { error } = await sb.from("perfil").upsert(payload, { onConflict: "user_id" });
+    }, { onConflict: "user_id" });
     setSaving(false);
     setMsg(error ? "Erro: " + error.message : "Salvo ✓");
     setTimeout(() => setMsg(""), 2000);
@@ -287,11 +379,7 @@ function SeusDados() {
         <input style={inputStyle} inputMode="decimal" value={vals.pesoMeta} onChange={e => setVals(p => ({ ...p, pesoMeta: e.target.value }))} />
       </div>
       {msg && <div style={{ fontSize: 13, color: msg.startsWith("Erro") ? "var(--bad)" : "var(--good)", marginBottom: 10 }}>{msg}</div>}
-      <button
-        onClick={salvar}
-        disabled={saving}
-        style={{ display: "block", width: "100%", textAlign: "center", border: "none", borderRadius: 8, fontFamily: "var(--font-oswald)", textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 600, fontSize: 15, padding: 14, cursor: "pointer", background: "var(--laranja)", color: "#1a0e06" }}
-      >
+      <button onClick={salvar} disabled={saving} style={{ display: "block", width: "100%", textAlign: "center", border: "none", borderRadius: 8, fontFamily: "var(--font-oswald)", textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 600, fontSize: 15, padding: 14, cursor: "pointer", background: "var(--laranja)", color: "#1a0e06" }}>
         {saving ? "Salvando…" : "Salvar"}
       </button>
       <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 10, lineHeight: 1.5 }}>
@@ -302,6 +390,8 @@ function SeusDados() {
 }
 
 /* ════════ PÁGINA ════════ */
+type HistSub = "peso" | "medidas" | "treino" | "jejum";
+
 export default function MaisPage() {
   const [histSub, setHistSub] = useState<HistSub>("peso");
 
@@ -316,7 +406,6 @@ export default function MaisPage() {
 
   return (
     <div>
-      {/* Histórico */}
       <div style={{ fontSize: 13, fontFamily: "var(--font-oswald)", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)", marginBottom: 12 }}>
         Histórico
       </div>
@@ -332,7 +421,6 @@ export default function MaisPage() {
       {histSub === "treino" && <HistoricoTreino />}
       {histSub === "jejum" && <HistoricoJejum />}
 
-      {/* Seus dados */}
       <div style={{ fontSize: 13, fontFamily: "var(--font-oswald)", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)", margin: "24px 0 12px" }}>
         Seus dados
       </div>

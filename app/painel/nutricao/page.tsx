@@ -57,6 +57,8 @@ function PaneJejum() {
   const [historico, setHistorico] = useState<JejumRow[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission>("default");
+  const notifTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sb = createClient();
 
@@ -75,6 +77,10 @@ function PaneJejum() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
+    if ("Notification" in window) setNotifPerm(Notification.permission);
+  }, []);
+
+  useEffect(() => {
     if (ativo) {
       const tick = () => setElapsed(Date.now() - new Date(ativo.inicio).getTime());
       tick();
@@ -85,12 +91,41 @@ function PaneJejum() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [ativo]);
 
+  async function pedirNotif() {
+    if (!("Notification" in window)) return;
+    const p = await Notification.requestPermission();
+    setNotifPerm(p);
+  }
+
+  function agendarNotif(inicioISO: string, alvoHoras: number) {
+    if (notifTimerRef.current) clearTimeout(notifTimerRef.current);
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const ms = new Date(inicioISO).getTime() + alvoHoras * 3600000 - Date.now();
+    if (ms <= 0) return;
+    notifTimerRef.current = setTimeout(() => {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification("Motor Próprio — Jejum completo 🔥", {
+            body: `Você completou ${alvoHoras}h de jejum! Hora de comer.`,
+            icon: "/icon-192.png",
+            tag: "jejum-completo",
+          });
+        }).catch(() => {
+          new Notification("Motor Próprio — Jejum completo 🔥", {
+            body: `Você completou ${alvoHoras}h de jejum! Hora de comer.`,
+            icon: "/icon-192.png",
+          });
+        });
+      }
+    }, ms);
+  }
+
   async function iniciar() {
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return;
     const inicio = new Date().toISOString();
     const { data } = await sb.from("jejuns").insert({ user_id: user.id, inicio, alvo_horas: alvo, alvo_batido: false }).select().single();
-    if (data) { setAtivo(data); setElapsed(0); }
+    if (data) { setAtivo(data); setElapsed(0); agendarNotif(inicio, alvo); }
   }
 
   async function encerrar() {
@@ -178,6 +213,15 @@ function PaneJejum() {
           </>
         )}
       </div>
+
+      {notifPerm !== "granted" && notifPerm !== "denied" && (
+        <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "11px 13px", marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Ativar aviso quando o jejum terminar?</div>
+          <button onClick={pedirNotif} style={{ background: "var(--laranja)", color: "#1a0e06", border: "none", borderRadius: 8, fontFamily: "var(--font-oswald)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 700, fontSize: 11, padding: "7px 13px", cursor: "pointer", whiteSpace: "nowrap" }}>
+            Ativar
+          </button>
+        </div>
+      )}
 
       <div style={{ fontSize: 11, fontFamily: "var(--font-oswald)", textTransform: "uppercase", letterSpacing: ".1em", color: "var(--muted)", marginBottom: 10 }}>Constância</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>
