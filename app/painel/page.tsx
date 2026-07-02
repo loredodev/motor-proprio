@@ -15,6 +15,7 @@ type Medida = {
 type Treino = { id: string; data: string; esporte: string; };
 type Marco = { id: string; nome: string; concluido: boolean; data_conclusao: string | null; };
 type Perfil = { altura: number | null; data_inicio: string | null; peso_meta: number | null; } | null;
+type Jejum = { id: string; inicio: string; fim: string | null; horas: number | null; alvo_horas: number; alvo_batido: boolean; };
 
 /* ── utilitários ── */
 function r1(n: number) { return Math.round(n * 10) / 10; }
@@ -112,6 +113,7 @@ export default function PainelPage() {
   const [treinos, setTreinos] = useState<Treino[]>([]);
   const [marcos, setMarcos] = useState<Marco[]>([]);
   const [perfil, setPerfil] = useState<Perfil>(null);
+  const [jejuns, setJejuns] = useState<Jejum[]>([]);
   const [chartMetric, setChartMetric] = useState("peso");
   const [loading, setLoading] = useState(true);
 
@@ -120,12 +122,13 @@ export default function PainelPage() {
     const { data: { user } } = await sb.auth.getUser();
     const uid = user!.id;
 
-    const [p, m, t, mk, pf] = await Promise.all([
+    const [p, m, t, mk, pf, jj] = await Promise.all([
       sb.from("pesagens").select("id,data,peso,gordura,musculo,visceral,agua,fc_repouso").order("data"),
       sb.from("medidas").select("id,data,cintura,quadril,abdomen").order("data"),
       sb.from("treinos").select("id,data,esporte").order("data"),
       sb.from("marcos").select("id,nome,concluido,data_conclusao").order("created_at"),
       sb.from("perfil").select("altura,data_inicio,peso_meta").maybeSingle(),
+      sb.from("jejuns").select("id,inicio,fim,horas,alvo_horas,alvo_batido").not("fim", "is", null).order("inicio"),
     ]);
 
     // Semeia marcos padrão se o usuário ainda não tiver nenhum
@@ -149,6 +152,7 @@ export default function PainelPage() {
     setTreinos(t.data ?? []);
     setMarcos(marcosData);
     setPerfil(pf.data ?? null);
+    setJejuns((jj.data ?? []) as Jejum[]);
     setLoading(false);
   }, []);
 
@@ -196,6 +200,13 @@ export default function PainelPage() {
   }
 
   const isEmpty = pes.length === 0 && tre.length === 0 && med.length === 0;
+
+  /* ── jejum streak ── */
+  const jejumDays = new Set(jejuns.filter(j => j.alvo_batido).map(j => (j.fim ?? j.inicio).slice(0, 10)));
+  let jejumStreak = 0;
+  const jd = new Date(todayISO());
+  if (!jejumDays.has(todayISO())) jd.setDate(jd.getDate() - 1);
+  while (jejumDays.has(jd.toISOString().slice(0, 10))) { jejumStreak++; jd.setDate(jd.getDate() - 1); }
 
   /* ── série do gráfico ── */
   function seriesFor(k: string) {
@@ -263,12 +274,14 @@ export default function PainelPage() {
       ) : (
         <>
           {/* Strip de stats */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 4 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 4 }}>
             {[
               { v: dia ?? "—", k: "Dia jornada" },
               { v: treinos.length, k: "Treinos" },
-              { v: treThisWeek, k: "Esta semana" },
               { v: streak, k: "Sem. seguidas" },
+              { v: treThisWeek, k: "Esta semana" },
+              { v: jejuns.length, k: "Jejuns" },
+              { v: jejumStreak, k: "Dias jejum" },
             ].map(s => (
               <div key={s.k} style={{ background: "linear-gradient(160deg,#241d15,#1a150f)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: "12px 8px", textAlign: "center" }}>
                 <div style={{ fontFamily: "var(--font-oswald)", fontWeight: 700, fontSize: 22, color: "var(--laranja)", lineHeight: 1 }}>{s.v}</div>

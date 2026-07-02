@@ -77,18 +77,20 @@ const btnPrimary: React.CSSProperties = {
 
 /* ── Field standalone (fora dos forms para não perder foco) ── */
 function Field({
-  label, placeholder, type = "text", value, onChange,
+  label, placeholder, type = "text", value, onChange, error = false,
 }: {
   label: string; placeholder?: string; type?: string;
-  value: string; onChange: (v: string) => void;
+  value: string; onChange: (v: string) => void; error?: boolean;
 }) {
   return (
     <div style={fieldStyle}>
-      <label style={labelStyle}>{label}</label>
+      <label style={{ ...labelStyle, color: error ? "var(--bad)" : "var(--muted)" }}>
+        {label}{error && <span style={{ marginLeft: 4, fontSize: 11 }}>← obrigatório</span>}
+      </label>
       <input
         type={type}
         inputMode={type === "date" ? undefined : "decimal"}
-        style={inputStyle}
+        style={{ ...inputStyle, border: `1px solid ${error ? "var(--bad)" : "var(--line)"}` }}
         placeholder={placeholder}
         value={value}
         onChange={e => onChange(e.target.value)}
@@ -104,11 +106,15 @@ function FormPesagem({ onSaved }: { onSaved: () => void }) {
   const [vals, setVals] = useState<Record<string, string>>({ data: todayISO() });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [erroPeso, setErroPeso] = useState(false);
 
-  function set(k: string, v: string) { setVals(prev => ({ ...prev, [k]: v })); }
+  function set(k: string, v: string) {
+    setVals(prev => ({ ...prev, [k]: v }));
+    if (k === "peso") setErroPeso(false);
+  }
 
   async function salvar() {
-    if (!vals.peso) { setMsg("Informe o peso"); return; }
+    if (!vals.peso) { setErroPeso(true); setMsg(""); return; }
     setSaving(true);
     const sb = createClient();
     const { data: { user } } = await sb.auth.getUser();
@@ -130,14 +136,15 @@ function FormPesagem({ onSaved }: { onSaved: () => void }) {
     setSaving(false);
     if (error) { setMsg("Erro ao salvar: " + error.message); return; }
     setMsg("Pesagem salva 💪");
-    setTimeout(onSaved, 900);
+    setVals({ data: todayISO() });
+    setTimeout(() => setMsg(""), 3000);
   }
 
   return (
     <div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--r)", padding: 16 }}>
       <Field label="Data" type="date" value={vals.data ?? ""} onChange={v => set("data", v)} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <Field label="Peso (kg) *" placeholder="ex: 92,0" value={vals.peso ?? ""} onChange={v => set("peso", v)} />
+        <Field label="Peso (kg) *" placeholder="ex: 92,0" value={vals.peso ?? ""} onChange={v => set("peso", v)} error={erroPeso} />
         <Field label="Gordura (%)" value={vals.gordura ?? ""} onChange={v => set("gordura", v)} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -164,6 +171,9 @@ function FormPesagem({ onSaved }: { onSaved: () => void }) {
       <button style={btnPrimary} disabled={saving} onClick={salvar}>
         {saving ? "Salvando…" : "Salvar pesagem"}
       </button>
+      <button style={{ display: "block", width: "100%", marginTop: 10, background: "transparent", border: "1px solid var(--line2)", color: "var(--muted)", borderRadius: 8, padding: 12, cursor: "pointer", fontFamily: "var(--font-oswald)", textTransform: "uppercase", letterSpacing: ".06em", fontSize: 13 }} onClick={onSaved}>
+        Ver painel
+      </button>
     </div>
   );
 }
@@ -176,6 +186,7 @@ function FormMedidas({ onSaved }: { onSaved: () => void }) {
   const [vals, setVals] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [erroVazio, setErroVazio] = useState(false);
 
   async function salvar() {
     const obj: Record<string, number | null | string> = { data };
@@ -187,7 +198,8 @@ function FormMedidas({ onSaved }: { onSaved: () => void }) {
         if (v != null) has = true;
       });
     });
-    if (!has) { setMsg("Preencha ao menos uma medida"); return; }
+    if (!has) { setErroVazio(true); setMsg(""); return; }
+    setErroVazio(false);
     setSaving(true);
     const sb = createClient();
     const { data: { user } } = await sb.auth.getUser();
@@ -196,7 +208,8 @@ function FormMedidas({ onSaved }: { onSaved: () => void }) {
     setSaving(false);
     if (error) { setMsg("Erro: " + error.message); return; }
     setMsg("Medidas salvas 📏");
-    setTimeout(onSaved, 900);
+    setVals({});
+    setTimeout(() => setMsg(""), 3000);
   }
 
   return (
@@ -205,8 +218,8 @@ function FormMedidas({ onSaved }: { onSaved: () => void }) {
         <label style={labelStyle}>Data</label>
         <input type="date" style={inputStyle} value={data} onChange={e => setData(e.target.value)} />
       </div>
-      <div style={{ fontSize: 11.5, color: "var(--faint)", margin: "-2px 2px 12px" }}>
-        Cada medida mostra onde passar a fita. Meça relaxado, fita reta, mesma hora do dia. Preencha só o que quiser acompanhar.
+      <div style={{ fontSize: 11.5, color: erroVazio ? "var(--bad)" : "var(--faint)", margin: "-2px 2px 12px" }}>
+        {erroVazio ? "Preencha ao menos uma medida antes de salvar." : "Cada medida mostra onde passar a fita. Meça relaxado, fita reta, mesma hora do dia. Preencha só o que quiser acompanhar."}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
         {MEDGROUPS.map(g => (
@@ -224,7 +237,7 @@ function FormMedidas({ onSaved }: { onSaved: () => void }) {
                       inputMode="decimal"
                       placeholder={suf ? `${suf} (cm)` : "cm"}
                       value={vals[k] ?? ""}
-                      onChange={e => setVals(prev => ({ ...prev, [k]: e.target.value }))}
+                      onChange={e => { setErroVazio(false); setVals(prev => ({ ...prev, [k]: e.target.value })); }}
                     />
                   </div>
                 ))}
@@ -236,6 +249,9 @@ function FormMedidas({ onSaved }: { onSaved: () => void }) {
       {msg && <div style={{ fontSize: 13, color: msg.includes("Erro") ? "var(--bad)" : "var(--good)", margin: "10px 0" }}>{msg}</div>}
       <button style={{ ...btnPrimary, marginTop: 14 }} disabled={saving} onClick={salvar}>
         {saving ? "Salvando…" : "Salvar medidas"}
+      </button>
+      <button style={{ display: "block", width: "100%", marginTop: 10, background: "transparent", border: "1px solid var(--line2)", color: "var(--muted)", borderRadius: 8, padding: 12, cursor: "pointer", fontFamily: "var(--font-oswald)", textTransform: "uppercase", letterSpacing: ".06em", fontSize: 13 }} onClick={onSaved}>
+        Ver painel
       </button>
     </div>
   );
@@ -267,7 +283,8 @@ function FormTreino({ onSaved, preset }: { onSaved: () => void; preset?: Record<
     setSaving(false);
     if (error) { setMsg("Erro: " + error.message); return; }
     setMsg("Treino salvo 🔥");
-    setTimeout(onSaved, 900);
+    setVals({ data: todayISO(), esporte: "Corrida" });
+    setTimeout(() => setMsg(""), 3000);
   }
 
   return (
@@ -308,6 +325,9 @@ function FormTreino({ onSaved, preset }: { onSaved: () => void; preset?: Record<
       {msg && <div style={{ fontSize: 13, color: msg.includes("Erro") ? "var(--bad)" : "var(--good)", marginBottom: 10 }}>{msg}</div>}
       <button style={btnPrimary} disabled={saving} onClick={salvar}>
         {saving ? "Salvando…" : "Salvar treino"}
+      </button>
+      <button style={{ display: "block", width: "100%", marginTop: 10, background: "transparent", border: "1px solid var(--line2)", color: "var(--muted)", borderRadius: 8, padding: 12, cursor: "pointer", fontFamily: "var(--font-oswald)", textTransform: "uppercase", letterSpacing: ".06em", fontSize: 13 }} onClick={onSaved}>
+        Ver painel
       </button>
       <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 12 }}>
         Registre logo após treinar. Para escolher um treino pronto, vá na aba Treinos.
