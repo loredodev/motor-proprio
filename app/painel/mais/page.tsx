@@ -181,7 +181,7 @@ function HistoricoTreino() {
             {t.distancia != null && <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Distância <b style={{ color: "var(--txt)", fontFamily: "var(--font-oswald)", fontSize: 14 }}>{String(t.distancia)}km</b></div>}
             {t.esforco != null && <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Esforço <b style={{ color: "var(--txt)", fontFamily: "var(--font-oswald)", fontSize: 14 }}>{String(t.esforco)}/10</b></div>}
           </div>
-          {t.notas && <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 7, fontStyle: "italic" }}>{String(t.notas)}</div>}
+          {t.notas != null && <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 7, fontStyle: "italic" }}>{String(t.notas)}</div>}
           <div style={{ textAlign: "right", marginTop: 4 }}>
             <button onClick={() => apagar(String(t.id))} style={{ background: "none", border: "none", color: "var(--faint)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>apagar</button>
           </div>
